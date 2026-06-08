@@ -1,0 +1,1463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Affect Space — 3D</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, 'Helvetica Neue', sans-serif; overflow: hidden; height: 100vh; display: flex; flex-direction: column; transition: background 0.6s ease; }
+.toolbar { display: flex; align-items: center; border-bottom: 0.5px solid var(--border); overflow-x: auto; flex-shrink: 0; transition: background 0.6s, border-color 0.6s; }
+.emo-btn { border: none; border-right: 0.5px solid var(--border); padding: 9px 12px; font-size: 9px; background: transparent; color: var(--btn-text); cursor: pointer; letter-spacing: 0.07em; white-space: nowrap; transition: all 0.15s; flex-shrink: 0; text-transform: uppercase; }
+.emo-btn:hover { color: var(--text); }
+.emo-btn.active { font-weight: 600; }
+.cat-div { width: 0.5px; background: var(--border); height: 38px; flex-shrink: 0; transition: background 0.6s; }
+.controls { display: flex; align-items: center; gap: 1.2rem; padding: 7px 14px; border-bottom: 0.5px solid var(--border); flex-shrink: 0; flex-wrap: wrap; transition: background 0.6s, border-color 0.6s; }
+.ctrl-label { font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--btn-text); white-space: nowrap; }
+.ctrl-row { display: flex; align-items: center; gap: 6px; }
+.ctrl-row input[type=range] { width: 90px; accent-color: var(--text); }
+.ctrl-val { font-size: 10px; color: var(--btn-text); min-width: 20px; font-variant-numeric: tabular-nums; }
+.btn-sm { border: 0.5px solid var(--border); border-radius: 2px; padding: 4px 10px; font-size: 9px; background: transparent; color: var(--btn-text); cursor: pointer; letter-spacing: 0.08em; text-transform: uppercase; transition: all 0.15s; }
+.btn-sm:hover { color: var(--text); border-color: var(--text); }
+.mode-btn { border: 0.5px solid var(--border); border-radius: 2px; padding: 4px 10px; font-size: 9px; background: transparent; color: var(--btn-text); cursor: pointer; letter-spacing: 0.08em; text-transform: uppercase; transition: all 0.15s; }
+.mode-btn:hover { color: var(--text); }
+.mode-btn.active { background: var(--text); color: var(--bg); border-color: var(--text); }
+.mode-group { display: flex; gap: 0; border: 0.5px solid var(--border); border-radius: 2px; overflow: hidden; }
+.mode-group .mode-btn { border: none; border-right: 0.5px solid var(--border); border-radius: 0; }
+.mode-group .mode-btn:last-child { border-right: none; }
+canvas { flex: 1; display: block; width: 100%; }
+.hint { position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%); font-size: 9px; color: var(--btn-text); letter-spacing: 0.06em; pointer-events: none; padding: 4px 10px; white-space: nowrap; opacity: 0.7; }
+.count { margin-left: auto; font-size: 9px; color: var(--btn-text); letter-spacing: 0.06em; }
+
+/* Mode 1: Harmonic — white bg, warm colors */
+body[data-mode="harmonic"] { --bg: #ffffff; --text: #222; --btn-text: #aaa; --border: #e0e0e0; --toolbar-bg: #fff; --canvas-bg: #ffffff; background: var(--bg); }
+body[data-mode="harmonic"] .toolbar, body[data-mode="harmonic"] .controls { background: var(--toolbar-bg); }
+
+/* Mode 2: Ambient — pure white bg, desaturated cool */
+body[data-mode="ambient"] { --bg: #ffffff; --text: #333; --btn-text: #b8b8b8; --border: #eee; --toolbar-bg: #fff; --canvas-bg: #ffffff; background: var(--bg); }
+body[data-mode="ambient"] .toolbar, body[data-mode="ambient"] .controls { background: var(--toolbar-bg); }
+
+/* Mode 3: Uncanny — black bg, neon */
+body[data-mode="uncanny"] { --bg: #0a0a0a; --text: #f0f0f0; --btn-text: #555; --border: #222; --toolbar-bg: #0a0a0a; --canvas-bg: #0a0a0a; background: var(--bg); color: #fff; }
+body[data-mode="uncanny"] .toolbar, body[data-mode="uncanny"] .controls { background: var(--toolbar-bg); }
+</style>
+</head>
+<body data-mode="harmonic">
+
+<div class="toolbar" id="toolbar"></div>
+
+<div class="controls">
+  <div>
+    <div class="ctrl-label">Volume radius</div>
+    <div class="ctrl-row">
+      <input type="range" min="20" max="160" value="60" id="radius" step="1">
+      <span class="ctrl-val" id="rVal">60</span>
+    </div>
+  </div>
+  <div class="mode-group">
+    <button class="mode-btn active" data-mode="harmonic">Harmonic</button>
+    <button class="mode-btn" data-mode="ambient">Ambient</button>
+    <button class="mode-btn" data-mode="uncanny">Uncanny</button>
+  </div>
+  <button class="btn-sm" id="resetBtn">Reset view</button>
+  <button class="btn-sm" id="clearBtn">Clear</button>
+  <button class="btn-sm" id="soundBtn">Sound: off</button>
+  <button class="btn-sm" id="exportBtn">Export view</button>
+  <button class="btn-sm" id="recordBtn">Record</button>
+  <button class="btn-sm" id="saveDataBtn">Save data</button>
+  <button class="btn-sm" id="loadDataBtn">Load data</button>
+  <input type="file" id="loadDataInput" accept=".json" style="display:none;">
+  <span class="count" id="count">0 points</span>
+</div>
+
+<canvas id="c"></canvas>
+<div class="hint" id="hint">Click to place · Drag bubble to move · Shift+click delete · Scroll zoom · Drag empty rotate · Space+drag or Right-drag pan</div>
+
+<script>
+// ============ MODES ============
+
+const EMOTIONS = [
+  // [emo, category]
+  ['Vitality',     'arousal'],  ['Tension',      'arousal'],  ['Overwhelm',  'arousal'],  ['Excitement',  'arousal'],
+  ['Solitude',     'detach'],   ['Anonymity',    'detach'],   ['Emptiness',  'detach'],   ['Numbness',    'detach'],
+  ['Belonging',    'belong'],   ['Estrangement', 'belong'],   ['Welcome',    'belong'],   ['Exclusion',   'belong'],
+  ['Relief',       'restore'],  ['Calm',         'restore'],  ['Release',    'restore'],  ['Restoration', 'restore'],
+  ['Longing',      'temporal'], ['Uncanny',      'temporal'], ['Nostalgia',  'temporal'], ['Déjà vu',     'temporal'],
+];
+
+const COLORS = {
+  harmonic: {
+    Vitality: '#FFC107', Tension: '#E53935', Overwhelm: '#FF5722', Excitement: '#FF6D00',
+    Solitude: '#607D8B', Anonymity: '#78909C', Emptiness: '#90A4AE', Numbness: '#B0BEC5',
+    Belonging: '#00E5FF', Estrangement: '#FF4081', Welcome: '#00BCD4', Exclusion: '#F50057',
+    Relief: '#69FF47', Calm: '#00E676', Release: '#76FF03', Restoration: '#00BFA5',
+    Longing: '#D500F9', Uncanny: '#7C4DFF', Nostalgia: '#AA00FF', 'Déjà vu': '#6200EA',
+  },
+  ambient: {
+    // desaturated cool & neutral tones
+    Vitality: '#C5B5A8', Tension: '#B8A89E', Overwhelm: '#D4C5A8', Excitement: '#BFAA98',
+    Solitude: '#8FA0A8', Anonymity: '#9CABB0', Emptiness: '#ADB8BC', Numbness: '#C8D0D2',
+    Belonging: '#A8C2C8', Estrangement: '#C5A8B5', Welcome: '#9BB5BB', Exclusion: '#B89AA5',
+    Relief: '#B0C5B0', Calm: '#A5C0B8', Release: '#BAC8B5', Restoration: '#9FBFB5',
+    Longing: '#B5A8BF', Uncanny: '#A89FBA', Nostalgia: '#B0A5BD', 'Déjà vu': '#9D95B0',
+  },
+  uncanny: {
+    // bright neon for black bg
+    Vitality: '#FF1744', Tension: '#FF3D71', Overwhelm: '#FFEA00', Excitement: '#FF6E00',
+    Solitude: '#90A4AE', Anonymity: '#B0BEC5', Emptiness: '#CFD8DC', Numbness: '#ECEFF1',
+    Belonging: '#00E5FF', Estrangement: '#FF4081', Welcome: '#1DE9B6', Exclusion: '#FF1744',
+    Relief: '#76FF03', Calm: '#00E676', Release: '#B2FF59', Restoration: '#00FFCC',
+    Longing: '#E040FB', Uncanny: '#7C4DFF', Nostalgia: '#B388FF', 'Déjà vu': '#651FFF',
+  }
+};
+
+let currentMode = 'harmonic';
+
+// ============ STATE ============
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+const STORAGE_KEY = 'affect3d_v4';
+let points = []; // {x, y, z, emo, radius, id}
+let radius = 60;
+let rotX = -0.35, rotY = 0.55;
+let isDragging = false, dragDist = 0;
+let lastMX = 0, lastMY = 0;
+let selectedEmo = null;
+let animT = 0;
+let draggingPoint = null;
+let isPanning = false;
+let spaceDown = false;
+let zoom = 1; // camera zoom factor
+let targetZoom = 1, targetPanX = 0, targetPanY = 0; // for smooth lerping
+let panX = 0, panY = 0; // camera pan offset
+const BOUND = 3; // expanded world bounds (was 0.92)
+
+function loadPoints() {
+  try {
+    const r = localStorage.getItem(STORAGE_KEY);
+    if (r) {
+      points = JSON.parse(r);
+    } else {
+      // first-time visitor — seed with a Welcome point at center
+      points = [{
+        x: 0, y: 0, z: 0,
+        emo: 'Welcome',
+        radius: 70,
+        id: Date.now()
+      }];
+      savePoints();
+    }
+  } catch(e) {}
+  updateCount();
+}
+function savePoints() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(points)); } catch(e) {}
+  updateCount();
+}
+function updateCount() {
+  document.getElementById('count').textContent = `${points.length} point${points.length !== 1 ? 's' : ''}`;
+}
+
+function colorFor(emo) {
+  return COLORS[currentMode][emo] || '#888';
+}
+
+function bgColor() {
+  if (currentMode === 'harmonic') return '#ffffff';
+  if (currentMode === 'ambient') return '#ffffff';
+  return '#0a0a0a';
+}
+
+// ============ TOOLBAR ============
+
+function buildToolbar() {
+  const tb = document.getElementById('toolbar');
+  tb.innerHTML = '';
+  let prevCat = null;
+  EMOTIONS.forEach(([emo, cat]) => {
+    if (prevCat && prevCat !== cat) {
+      const div = document.createElement('div');
+      div.className = 'cat-div';
+      tb.appendChild(div);
+    }
+    const btn = document.createElement('button');
+    btn.className = 'emo-btn';
+    btn.dataset.emo = emo;
+    btn.textContent = emo;
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.emo-btn').forEach(b => {
+        b.classList.remove('active');
+        b.style.background = '';
+        b.style.color = '';
+      });
+      btn.classList.add('active');
+      const c = colorFor(emo);
+      btn.style.background = c;
+      btn.style.color = isLightColor(c) ? '#111' : '#fff';
+      selectedEmo = { emo, color: c };
+    });
+    tb.appendChild(btn);
+    prevCat = cat;
+  });
+}
+
+function isLightColor(hex) {
+  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  return (r*299 + g*587 + b*114) / 1000 > 160;
+}
+
+// ============ 3D MATH ============
+
+function resize() {
+  W = canvas.clientWidth; H = canvas.clientHeight;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = W * dpr; canvas.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+window.addEventListener('resize', () => { resize(); draw(); });
+
+const BOX = 180;
+const CX = () => W / 2 + panX;
+const CY = () => H / 2 + panY;
+
+function rot(x, y, z) {
+  const cy = Math.cos(rotY), sy = Math.sin(rotY);
+  const x1 = x*cy + z*sy, z1 = -x*sy + z*cy;
+  const cx = Math.cos(rotX), sx = Math.sin(rotX);
+  return { x: x1, y: y*cx - z1*sx, z: y*sx + z1*cx };
+}
+
+function proj(x, y, z) {
+  const fov = 700, depth = fov + z * BOX * zoom;
+  const s = fov / depth;
+  return { sx: CX() + x * BOX * zoom * s, sy: CY() - y * BOX * zoom * s, s: s * zoom, z };
+}
+
+function unproject(mx, my) {
+  const dx = (mx - CX()) / (BOX * zoom), dy = -(my - CY()) / (BOX * zoom);
+  const cy = Math.cos(-rotY), sy = Math.sin(-rotY);
+  const cx = Math.cos(-rotX), sx = Math.sin(-rotX);
+  const y_r = dy * cx, z_r = dy * sx;
+  const x_w = dx * cy + z_r * sy, z_w = -dx * sy + z_r * cy;
+  const cl = v => Math.max(-BOUND, Math.min(BOUND, v));
+  return { x: cl(x_w), y: cl(y_r), z: cl(z_w * 0.4) };
+}
+
+function hexToRgb(h) {
+  return [parseInt(h.slice(1,3),16), parseInt(h.slice(3,5),16), parseInt(h.slice(5,7),16)];
+}
+
+function findPointAtScreen(mx, my) {
+  let best = null, bestDist = Infinity;
+  points.forEach(p => {
+    const r = rot(p.x, p.y, p.z);
+    const pr = proj(r.x, r.y, r.z);
+    const rad = p.radius * pr.s;
+    const dx = mx - pr.sx, dy = my - pr.sy;
+    const d = Math.sqrt(dx*dx + dy*dy);
+    if (d < rad && d < bestDist) { best = p; bestDist = d; }
+  });
+  return best;
+}
+
+// ============ AXIS INDICATOR ============
+
+function drawAxisIndicator() {
+  const ox = 60, oy = H - 60;
+  const len = 40;
+  const axisColor = currentMode === 'uncanny' ? 'rgba(200,200,200,0.7)' : 'rgba(60,60,60,0.7)';
+  const labelColor = currentMode === 'uncanny' ? 'rgba(220,220,220,0.85)' : 'rgba(40,40,40,0.85)';
+  const axes = [
+    { v: [1,0,0], label: 'X' },
+    { v: [0,1,0], label: 'Y' },
+    { v: [0,0,1], label: 'Z' },
+  ];
+  ctx.beginPath();
+  ctx.arc(ox, oy, 2.5, 0, Math.PI*2);
+  ctx.fillStyle = axisColor;
+  ctx.fill();
+  axes.forEach(ax => {
+    const r = rot(...ax.v);
+    const ex = ox + r.x * len;
+    const ey = oy - r.y * len;
+    ctx.beginPath();
+    ctx.moveTo(ox, oy);
+    ctx.lineTo(ex, ey);
+    ctx.strokeStyle = axisColor;
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+    const ang = Math.atan2(ey - oy, ex - ox);
+    const ahl = 5;
+    ctx.beginPath();
+    ctx.moveTo(ex, ey);
+    ctx.lineTo(ex - ahl*Math.cos(ang - 0.4), ey - ahl*Math.sin(ang - 0.4));
+    ctx.moveTo(ex, ey);
+    ctx.lineTo(ex - ahl*Math.cos(ang + 0.4), ey - ahl*Math.sin(ang + 0.4));
+    ctx.stroke();
+    ctx.font = '500 10px sans-serif';
+    ctx.fillStyle = labelColor;
+    ctx.textAlign = 'center';
+    ctx.fillText(ax.label, ex + (ex - ox) * 0.22, ey + (ey - oy) * 0.22 + 4);
+  });
+  ctx.textAlign = 'left';
+}
+
+// ============ RENDERING ============
+
+function paintBlob(c, sx, sy, color, rad) {
+  const [r,g,b] = hexToRgb(color);
+  const og = c.createRadialGradient(sx, sy, 0, sx, sy, rad * 1.45);
+  og.addColorStop(0,    `rgba(${r},${g},${b},0)`);
+  og.addColorStop(0.35, `rgba(${r},${g},${b},0.12)`);
+  og.addColorStop(0.65, `rgba(${r},${g},${b},0.06)`);
+  og.addColorStop(1,    `rgba(${r},${g},${b},0)`);
+  c.beginPath();
+  c.arc(sx, sy, rad * 1.45, 0, Math.PI*2);
+  c.fillStyle = og;
+  c.fill();
+
+  const gr = c.createRadialGradient(sx, sy, 0, sx, sy, rad);
+  gr.addColorStop(0,   `rgba(${r},${g},${b},0.95)`);
+  gr.addColorStop(0.3, `rgba(${r},${g},${b},0.8)`);
+  gr.addColorStop(0.65,`rgba(${r},${g},${b},0.35)`);
+  gr.addColorStop(1,   `rgba(${r},${g},${b},0)`);
+  c.beginPath();
+  c.arc(sx, sy, rad, 0, Math.PI*2);
+  c.fillStyle = gr;
+  c.fill();
+}
+
+function paintCore(c, sx, sy, color, rad) {
+  const [r,g,b] = hexToRgb(color);
+  const coreR = Math.max(3, rad * 0.18);
+  const gr = c.createRadialGradient(sx, sy, 0, sx, sy, coreR);
+  gr.addColorStop(0, `rgba(${Math.min(r+120,255)},${Math.min(g+120,255)},${Math.min(b+120,255)},0.9)`);
+  gr.addColorStop(1, `rgba(${r},${g},${b},0)`);
+  c.beginPath();
+  c.arc(sx, sy, coreR, 0, Math.PI*2);
+  c.fillStyle = gr;
+  c.fill();
+}
+
+function fieldAt(px, py, blobsScreen) {
+  let v = 0;
+  blobsScreen.forEach(b => {
+    const dx = px - b.sx, dy = py - b.sy;
+    const d2 = dx*dx + dy*dy;
+    const r2 = b.rad * b.rad;
+    if (d2 < r2 * 4) {
+      const t = d2 / (r2 * 4);
+      v += (1 - t) * (1 - t) * (1 - t);
+    }
+  });
+  return v;
+}
+
+function getContourSegs(blobsScreen, threshold, w, h) {
+  const nx = Math.round(w / 5), ny = Math.round(h / 5);
+  const cw = w / nx, ch = h / ny;
+  const grid = new Float32Array((nx+1)*(ny+1));
+  for (let y = 0; y <= ny; y++)
+    for (let x = 0; x <= nx; x++)
+      grid[y*(nx+1)+x] = fieldAt(x*cw, y*ch, blobsScreen);
+  const segs = [];
+  function lerpPt(ax,ay,av,bx,by,bv) {
+    const t = (threshold-av)/(bv-av);
+    return [ax+t*(bx-ax), ay+t*(by-ay)];
+  }
+  for (let y = 0; y < ny; y++) {
+    for (let x = 0; x < nx; x++) {
+      const v00=grid[y*(nx+1)+x], v10=grid[y*(nx+1)+x+1];
+      const v11=grid[(y+1)*(nx+1)+x+1], v01=grid[(y+1)*(nx+1)+x];
+      const x0=x*cw, y0=y*ch, x1=(x+1)*cw, y1=(y+1)*ch;
+      const idx=(v00>threshold?8:0)|(v10>threshold?4:0)|(v11>threshold?2:0)|(v01>threshold?1:0);
+      if (idx===0||idx===15) continue;
+      const top=lerpPt(x0,y0,v00,x1,y0,v10);
+      const right=lerpPt(x1,y0,v10,x1,y1,v11);
+      const bottom=lerpPt(x0,y1,v01,x1,y1,v11);
+      const left=lerpPt(x0,y0,v00,x0,y1,v01);
+      const map={1:[left,bottom],2:[bottom,right],3:[left,right],4:[right,top],6:[bottom,top],7:[left,top],8:[top,left],9:[top,bottom],11:[top,right],12:[right,left],13:[right,bottom],14:[bottom,left],5:[left,top,right,bottom],10:[top,right,bottom,left]};
+      const pts=map[idx]; if (!pts) continue;
+      if (pts.length===2) segs.push([pts[0],pts[1]]);
+      else { segs.push([pts[0],pts[1]]); segs.push([pts[2],pts[3]]); }
+    }
+  }
+  return segs;
+}
+
+function chainToLoops(segs) {
+  if (!segs.length) return [];
+  const eps2 = 9;
+  const used = new Uint8Array(segs.length);
+  const loops = [];
+  for (let s = 0; s < segs.length; s++) {
+    if (used[s]) continue;
+    used[s]=1;
+    let chain=[segs[s][0], segs[s][1]];
+    let growing=true;
+    while (growing) {
+      growing=false;
+      const tail=chain[chain.length-1];
+      for (let j=0;j<segs.length;j++) {
+        if (used[j]) continue;
+        const [a,b]=segs[j];
+        const dxa=tail[0]-a[0],dya=tail[1]-a[1];
+        const dxb=tail[0]-b[0],dyb=tail[1]-b[1];
+        if (dxa*dxa+dya*dya<eps2){chain.push(b);used[j]=1;growing=true;break;}
+        if (dxb*dxb+dyb*dyb<eps2){chain.push(a);used[j]=1;growing=true;break;}
+      }
+    }
+    if (chain.length>6) loops.push(chain);
+  }
+  return loops;
+}
+
+function drawSmoothLoop(c, pts) {
+  if (pts.length < 3) return;
+  const n = pts.length;
+  c.beginPath();
+  const mid = (a,b) => [(a[0]+b[0])/2,(a[1]+b[1])/2];
+  const start = mid(pts[n-1], pts[0]);
+  c.moveTo(start[0], start[1]);
+  for (let i=0;i<n;i++) {
+    const cur=pts[i], next=pts[(i+1)%n];
+    const m=mid(cur,next);
+    c.quadraticCurveTo(cur[0],cur[1],m[0],m[1]);
+  }
+  c.closePath();
+}
+
+function project3D(p) {
+  const r = rot(p.x, p.y, p.z);
+  const pr = proj(r.x, r.y, r.z);
+  const seed = (p.id || 0) % 1000;
+  const phase = seed * 0.013;
+  const speed = 0.01 + (seed % 7) * 0.0016;
+  const breath = 1 + Math.sin(animT * speed + phase) * 0.055;
+  return { ...p, sx: pr.sx, sy: pr.sy, rad: p.radius * pr.s * breath, _z: r.z };
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = bgColor();
+  ctx.fillRect(0, 0, W, H);
+
+  const projected = points.map(project3D).sort((a, b) => a._z - b._z);
+
+  if (projected.length === 0) {
+    drawAxisIndicator();
+    drawCursorPreview();
+    return;
+  }
+
+  const groups = {};
+  projected.forEach(p => {
+    const col = colorFor(p.emo);
+    if (!groups[p.emo]) groups[p.emo] = { color: col, blobs: [] };
+    groups[p.emo].blobs.push(p);
+  });
+
+  const tmp = document.createElement('canvas');
+  tmp.width = W; tmp.height = H;
+  const tc = tmp.getContext('2d');
+
+  Object.entries(groups).forEach(([emo, g]) => {
+    g.blobs.forEach(b => {
+      paintBlob(tc, b.sx, b.sy, g.color, b.rad);
+    });
+  });
+
+  ctx.save();
+  // multiply for light bg, screen for dark bg
+  ctx.globalCompositeOperation = currentMode === 'uncanny' ? 'screen' : 'multiply';
+  ctx.globalAlpha = currentMode === 'uncanny' ? 1.0 : 0.75;
+  ctx.drawImage(tmp, 0, 0);
+  ctx.restore();
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  projected.forEach(p => paintCore(ctx, p.sx, p.sy, colorFor(p.emo), p.rad));
+  ctx.restore();
+
+  Object.entries(groups).forEach(([emo, g]) => {
+    const [r,gr,b] = hexToRgb(g.color);
+    const segs = getContourSegs(g.blobs, 0.15, W, H);
+    const loops = chainToLoops(segs);
+    loops.forEach(loop => {
+      drawSmoothLoop(ctx, loop);
+      if (currentMode === 'uncanny') {
+        ctx.strokeStyle = `rgba(${r},${gr},${b},0.35)`;
+      } else {
+        ctx.strokeStyle = `rgba(${Math.round(r*0.5)},${Math.round(gr*0.5)},${Math.round(b*0.5)},0.35)`;
+      }
+      ctx.lineWidth = 0.3;
+      ctx.stroke();
+    });
+  });
+
+  Object.entries(groups).forEach(([emo, g]) => {
+    const cx = g.blobs.reduce((s,b)=>s+b.sx,0) / g.blobs.length;
+    const cy = g.blobs.reduce((s,b)=>s+b.sy,0) / g.blobs.length;
+    ctx.font = '8px sans-serif';
+    ctx.fillStyle = currentMode === 'uncanny' ? 'rgba(220,220,220,0.5)' : 'rgba(20,20,20,0.4)';
+    ctx.textAlign = 'center';
+    ctx.fillText(emo.toUpperCase(), cx, cy + 3);
+  });
+  ctx.textAlign = 'left';
+
+  drawAxisIndicator();
+  drawCursorPreview();
+}
+
+function drawCursorPreview() {
+  if (selectedEmo && !isDragging) {
+    const c = colorFor(selectedEmo.emo);
+    const [r,g,b] = hexToRgb(c);
+    ctx.beginPath();
+    ctx.arc(lastMX, lastMY, radius * 0.3, 0, Math.PI*2);
+    ctx.strokeStyle = `rgba(${r},${g},${b},0.5)`;
+    ctx.setLineDash([2,3]);
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.arc(lastMX, lastMY, 2, 0, Math.PI*2);
+    ctx.fillStyle = `rgba(${r},${g},${b},0.8)`;
+    ctx.fill();
+  }
+}
+
+// ============ SOUND ENGINES ============
+
+let soundEnabled = false;
+let soundReady = false;
+const voices = new Map();
+let masterReverb, masterLowpass, masterDelay, masterChorus, masterBus;
+
+// Sound profiles per mode
+const SOUND_PROFILES = {
+  harmonic: {
+    Vitality:    { type: 'rhythm', notes: ['A4','C5','E5'],    tempo: '8n',  base: 'A3' },
+    Tension:     { type: 'rhythm', notes: ['A3','C4'],          tempo: '16n', base: 'A2' },
+    Overwhelm:   { type: 'rhythm', notes: ['F#4','A4','C5'],    tempo: '16n', base: 'F#2' },
+    Excitement:  { type: 'rhythm', notes: ['E4','G#4','B4'],    tempo: '8n',  base: 'E3' },
+    Solitude:    { type: 'drone-h', note: 'A2', detune: 0 },
+    Anonymity:   { type: 'drone-h', note: 'C2', detune: 7 },
+    Emptiness:   { type: 'drone-h', note: 'D2', detune: -5 },
+    Numbness:    { type: 'drone-h', note: 'G1', detune: 0 },
+    Belonging:   { type: 'chord', notes: ['C4','E4','G4','B4'] },
+    Estrangement:{ type: 'chord', notes: ['C4','Eb4','G4','Bb4'] },
+    Welcome:     { type: 'chord', notes: ['F4','A4','C5','E5'] },
+    Exclusion:   { type: 'chord', notes: ['C4','Eb4','Gb4','A4'] },
+    Relief:      { type: 'chord', notes: ['D4','F#4','A4','C#5'] },
+    Calm:        { type: 'chord', notes: ['G3','B3','D4','F#4'] },
+    Release:     { type: 'chord', notes: ['E4','G#4','B4','D#5'] },
+    Restoration: { type: 'chord', notes: ['C4','E4','G4','D5'] },
+    Longing:     { type: 'echo-h', note: 'A4',  delay: 0.6 },
+    Uncanny:     { type: 'echo-h', note: 'F#4', delay: 0.4 },
+    Nostalgia:   { type: 'echo-h', note: 'D5',  delay: 0.8 },
+    'Déjà vu':   { type: 'echo-h', note: 'C5',  delay: 0.5 },
+  },
+  ambient: {
+    Vitality:    { type: 'bell-a', notes: ['E5','G5','B5'],      interval: '2n'  },
+    Tension:     { type: 'bell-a', notes: ['A4','E5'],           interval: '4n'  },
+    Overwhelm:   { type: 'bell-a', notes: ['D5','G5','A5','D6'], interval: '2n.' },
+    Excitement:  { type: 'bell-a', notes: ['G5','B5','D6'],      interval: '2n'  },
+    Solitude:    { type: 'drone-a', note: 'A2' },
+    Anonymity:   { type: 'drone-a', note: 'D2' },
+    Emptiness:   { type: 'drone-a', note: 'G1' },
+    Numbness:    { type: 'drone-a', note: 'E2' },
+    Belonging:   { type: 'pad-a', notes: ['C4','G4','D5'] },
+    Estrangement:{ type: 'pad-a', notes: ['C4','F4','Bb4'] },
+    Welcome:     { type: 'pad-a', notes: ['F4','C5','G5'] },
+    Exclusion:   { type: 'pad-a', notes: ['B3','F#4','C#5'] },
+    Relief:      { type: 'pad-a', notes: ['D4','A4','E5'] },
+    Calm:        { type: 'pad-a', notes: ['G3','D4','A4'] },
+    Release:     { type: 'pad-a', notes: ['E4','B4','F#5'] },
+    Restoration: { type: 'pad-a', notes: ['C4','G4','E5'] },
+    Longing:     { type: 'echo-a', note: 'A4',  delay: 0.75 },
+    Uncanny:     { type: 'echo-a', note: 'F#4', delay: 0.5  },
+    Nostalgia:   { type: 'echo-a', note: 'D5',  delay: 1.0  },
+    'Déjà vu':   { type: 'echo-a', note: 'C5',  delay: 0.65 },
+  },
+  uncanny: {
+    Vitality:    { type: 'fmbell-u', notes: ['E5','A5','B5'],      interval: '4n.', detune: 15  },
+    Tension:     { type: 'fmbell-u', notes: ['F#4','C5','F#5'],    interval: '8n',  detune: -20 },
+    Overwhelm:   { type: 'fmbell-u', notes: ['D5','G#5','D6'],     interval: '8n.', detune: 35  },
+    Excitement:  { type: 'fmbell-u', notes: ['G5','C#6','E6'],     interval: '4n',  detune: 8   },
+    Solitude:    { type: 'drone-u', note: 'A1', detune: -7  },
+    Anonymity:   { type: 'drone-u', note: 'D2', detune: 12  },
+    Emptiness:   { type: 'drone-u', note: 'G1', detune: -22 },
+    Numbness:    { type: 'drone-u', note: 'E1', detune: 18  },
+    Belonging:   { type: 'pad-u', notes: ['C4','G4','D5'],    detune: 5   },
+    Estrangement:{ type: 'pad-u', notes: ['C4','F#4','B4'],   detune: -10 },
+    Welcome:     { type: 'pad-u', notes: ['F4','C5','G5'],    detune: 0   },
+    Exclusion:   { type: 'pad-u', notes: ['B3','F4','C#5'],   detune: -25 },
+    Relief:      { type: 'swell-u', notes: ['D4','A4','E5'],  detune: 0   },
+    Calm:        { type: 'swell-u', notes: ['G3','D4','A4'],  detune: 4   },
+    Release:     { type: 'swell-u', notes: ['E4','B4','F#5'], detune: -3  },
+    Restoration: { type: 'swell-u', notes: ['C4','G4','D5'],  detune: 0   },
+    Longing:     { type: 'echo-u', note: 'A4',  delay: 0.66, detune: -15 },
+    Uncanny:     { type: 'echo-u', note: 'F#4', delay: 0.44, detune: 25  },
+    Nostalgia:   { type: 'echo-u', note: 'D5',  delay: 0.83, detune: -8  },
+    'Déjà vu':   { type: 'echo-u', note: 'C5',  delay: 0.55, detune: 12  },
+  }
+};
+
+async function initSound() {
+  if (soundReady) return;
+  await Tone.start();
+
+  masterReverb = new Tone.Reverb({ decay: 8, wet: 0.45 }).toDestination();
+  await masterReverb.generate();
+  masterChorus = new Tone.Chorus({ frequency: 0.4, delayTime: 4, depth: 0.3, wet: 0 }).connect(masterReverb).start();
+  masterLowpass = new Tone.Filter(3200, 'lowpass').connect(masterChorus);
+  masterBus = new Tone.Gain(0.7).connect(masterLowpass);
+  Tone.Transport.bpm.value = 70;
+  Tone.Transport.start();
+  soundReady = true;
+}
+
+// Update master FX based on mode
+function applyModeAudioSettings() {
+  if (!soundReady) return;
+  if (currentMode === 'harmonic') {
+    masterReverb.set({ decay: 6, wet: 0.4 });
+    masterLowpass.frequency.rampTo(3500, 1);
+    masterChorus.wet.rampTo(0, 1);
+    Tone.Transport.bpm.rampTo(70, 1);
+  } else if (currentMode === 'ambient') {
+    masterReverb.set({ decay: 12, wet: 0.55 });
+    masterLowpass.frequency.rampTo(2800, 1);
+    masterChorus.wet.rampTo(0, 1);
+    Tone.Transport.bpm.rampTo(60, 1);
+  } else if (currentMode === 'uncanny') {
+    masterReverb.set({ decay: 14, wet: 0.6 });
+    masterLowpass.frequency.rampTo(2400, 1);
+    masterChorus.wet.rampTo(0.3, 1);
+    Tone.Transport.bpm.rampTo(56, 1);
+  }
+}
+
+function createVoice(p) {
+  if (!soundReady || !soundEnabled) return;
+  const profile = SOUND_PROFILES[currentMode][p.emo];
+  if (!profile) return;
+
+  const v = { type: profile.type };
+
+  // ============ HARMONIC mode sounds ============
+  if (profile.type === 'chord') {
+    v.synth = new Tone.PolySynth(Tone.Synth, {
+      oscillator: { type: 'sine' },
+      envelope: { attack: 1.5, decay: 0.5, sustain: 0.6, release: 3 },
+      volume: -22
+    }).connect(masterBus);
+    v.synth.triggerAttack(profile.notes);
+  }
+  else if (profile.type === 'drone-h') {
+    v.synth = new Tone.Synth({
+      oscillator: { type: 'sawtooth' },
+      envelope: { attack: 3, decay: 0.5, sustain: 1, release: 4 },
+      volume: -28,
+      detune: profile.detune
+    }).connect(masterBus);
+    v.synth2 = new Tone.Synth({
+      oscillator: { type: 'sine' },
+      envelope: { attack: 3, decay: 0.5, sustain: 1, release: 4 },
+      volume: -24
+    }).connect(masterBus);
+    v.synth.triggerAttack(profile.note);
+    v.synth2.triggerAttack(profile.note);
+  }
+  else if (profile.type === 'rhythm') {
+    v.synth = new Tone.MembraneSynth({
+      pitchDecay: 0.05, octaves: 4,
+      envelope: { attack: 0.001, decay: 0.2, sustain: 0, release: 0.2 },
+      volume: -18
+    }).connect(masterBus);
+    v.synth2 = new Tone.Synth({
+      oscillator: { type: 'triangle' },
+      envelope: { attack: 0.005, decay: 0.15, sustain: 0, release: 0.1 },
+      volume: -20
+    }).connect(masterBus);
+    let i = 0;
+    v.loop = new Tone.Loop(time => {
+      v.synth.triggerAttackRelease(profile.base, '16n', time);
+      v.synth2.triggerAttackRelease(profile.notes[i % profile.notes.length], '32n', time + 0.05);
+      i++;
+    }, profile.tempo).start(0);
+  }
+  else if (profile.type === 'echo-h') {
+    const dly = new Tone.FeedbackDelay({ delayTime: profile.delay, feedback: 0.55, wet: 0.8 }).connect(masterReverb);
+    v.synth = new Tone.Synth({
+      oscillator: { type: 'sine' },
+      envelope: { attack: 0.05, decay: 0.4, sustain: 0, release: 2 },
+      volume: -18
+    }).connect(dly);
+    v.dly = dly;
+    v.synth.triggerAttackRelease(profile.note, '4n');
+    v.loop = new Tone.Loop(time => {
+      v.synth.triggerAttackRelease(profile.note, '4n', time);
+    }, '2m').start('+2m');
+  }
+  // ============ AMBIENT mode sounds ============
+  else if (profile.type === 'pad-a') {
+    v.synth = new Tone.PolySynth(Tone.Synth, {
+      oscillator: { type: 'sine' },
+      envelope: { attack: 4, decay: 1, sustain: 0.85, release: 6 },
+      volume: -20
+    }).connect(masterBus);
+    v.synth.triggerAttack(profile.notes);
+  }
+  else if (profile.type === 'drone-a') {
+    const freq = Tone.Frequency(profile.note).toFrequency();
+    v.synth = new Tone.Oscillator({ type: 'sine', frequency: freq, volume: -28 });
+    v.gain = new Tone.Gain(0).connect(masterBus);
+    v.synth.connect(v.gain); v.synth.start();
+    v.gain.gain.rampTo(0.8, 5);
+    v.synth2 = new Tone.Oscillator({ type: 'sine', frequency: freq * 1.005, volume: -30 });
+    v.gain2 = new Tone.Gain(0).connect(masterBus);
+    v.synth2.connect(v.gain2); v.synth2.start();
+    v.gain2.gain.rampTo(0.6, 6);
+  }
+  else if (profile.type === 'bell-a') {
+    v.synth = new Tone.PolySynth(Tone.Synth, {
+      oscillator: { type: 'sine' },
+      envelope: { attack: 0.005, decay: 1.2, sustain: 0, release: 1.5 },
+      volume: -16
+    }).connect(masterBus);
+    let i = 0;
+    v.loop = new Tone.Loop(time => {
+      const note = profile.notes[i % profile.notes.length];
+      v.synth.triggerAttackRelease(note, '8n', time);
+      i++;
+    }, profile.interval).start('+0.1');
+  }
+  else if (profile.type === 'echo-a') {
+    const dly = new Tone.FeedbackDelay({ delayTime: profile.delay, feedback: 0.65, wet: 0.9 }).connect(masterReverb);
+    v.synth = new Tone.Synth({
+      oscillator: { type: 'sine' },
+      envelope: { attack: 0.4, decay: 0.5, sustain: 0, release: 3 },
+      volume: -18
+    }).connect(dly);
+    v.dly = dly;
+    v.synth.triggerAttackRelease(profile.note, '2n');
+    v.loop = new Tone.Loop(time => {
+      v.synth.triggerAttackRelease(profile.note, '2n', time);
+    }, '4m').start('+4m');
+  }
+  // ============ UNCANNY mode sounds ============
+  else if (profile.type === 'pad-u') {
+    v.synth = new Tone.PolySynth(Tone.Synth, {
+      oscillator: { type: 'sine' },
+      envelope: { attack: 3, decay: 1, sustain: 0.8, release: 5 },
+      detune: profile.detune, volume: -22
+    }).connect(masterBus);
+    v.synth.triggerAttack(profile.notes);
+  }
+  else if (profile.type === 'swell-u') {
+    v.tremolo = new Tone.Tremolo(0.15, 0.4).connect(masterBus).start();
+    v.synth = new Tone.PolySynth(Tone.Synth, {
+      oscillator: { type: 'sine' },
+      envelope: { attack: 5, decay: 1, sustain: 0.85, release: 6 },
+      detune: profile.detune, volume: -20
+    }).connect(v.tremolo);
+    v.synth.triggerAttack(profile.notes);
+  }
+  else if (profile.type === 'drone-u') {
+    const freq = Tone.Frequency(profile.note).toFrequency();
+    v.synth = new Tone.Oscillator({ type: 'sine', frequency: freq, detune: profile.detune, volume: -22 });
+    v.gain = new Tone.Gain(0).connect(masterBus);
+    v.synth.connect(v.gain); v.synth.start();
+    v.gain.gain.rampTo(0.85, 6);
+    v.synth2 = new Tone.Oscillator({ type: 'sine', frequency: freq * 1.008, volume: -26 });
+    v.gain2 = new Tone.Gain(0).connect(masterBus);
+    v.synth2.connect(v.gain2); v.synth2.start();
+    v.gain2.gain.rampTo(0.7, 7);
+    v.synth3 = new Tone.Oscillator({ type: 'sine', frequency: freq * 8.02, volume: -38 });
+    v.gain3 = new Tone.Gain(0).connect(masterBus);
+    v.synth3.connect(v.gain3); v.synth3.start();
+    v.gain3.gain.rampTo(0.4, 9);
+  }
+  else if (profile.type === 'fmbell-u') {
+    v.synth = new Tone.PolySynth(Tone.FMSynth, {
+      harmonicity: 3.01, modulationIndex: 4,
+      oscillator: { type: 'sine' }, modulation: { type: 'sine' },
+      envelope: { attack: 0.005, decay: 1.8, sustain: 0, release: 2.5 },
+      modulationEnvelope: { attack: 0.01, decay: 0.5, sustain: 0.1, release: 1 },
+      detune: profile.detune, volume: -22
+    }).connect(masterBus);
+    let i = 0;
+    v.loop = new Tone.Loop(time => {
+      const note = profile.notes[i % profile.notes.length];
+      const jitter = (Math.random() - 0.5) * 0.04;
+      v.synth.triggerAttackRelease(note, '4n', time + jitter);
+      i++;
+    }, profile.interval).start('+0.2');
+  }
+  else if (profile.type === 'echo-u') {
+    const dly = new Tone.FeedbackDelay({ delayTime: profile.delay, feedback: 0.7, wet: 0.95 }).connect(masterReverb);
+    const pitchShift = new Tone.PitchShift({ pitch: -5, wet: 0.3 }).connect(dly);
+    v.synth = new Tone.Synth({
+      oscillator: { type: 'sine' },
+      envelope: { attack: 0.3, decay: 0.8, sustain: 0, release: 3 },
+      detune: profile.detune, volume: -22
+    }).connect(pitchShift);
+    v.dly = dly; v.pitchShift = pitchShift;
+    v.synth.triggerAttackRelease(profile.note, '2n');
+    v.loop = new Tone.Loop(time => {
+      v.synth.triggerAttackRelease(profile.note, '2n', time);
+    }, '3m').start('+3m');
+  }
+
+  voices.set(p.id, v);
+}
+
+function destroyVoice(id) {
+  const v = voices.get(id);
+  if (!v) return;
+  try {
+    if (v.loop) v.loop.dispose();
+    const isOsc = v.type && (v.type.startsWith('drone-a') || v.type.startsWith('drone-u'));
+    if (isOsc) {
+      if (v.gain) v.gain.gain.rampTo(0, 3);
+      if (v.gain2) v.gain2.gain.rampTo(0, 3);
+      if (v.gain3) v.gain3.gain.rampTo(0, 3);
+      setTimeout(() => {
+        try { v.synth?.stop(); v.synth?.dispose(); } catch(e){}
+        try { v.synth2?.stop(); v.synth2?.dispose(); } catch(e){}
+        try { v.synth3?.stop(); v.synth3?.dispose(); } catch(e){}
+        try { v.gain?.dispose(); v.gain2?.dispose(); v.gain3?.dispose(); } catch(e){}
+      }, 3500);
+    } else {
+      if (v.synth) {
+        if (v.synth.releaseAll) v.synth.releaseAll();
+        else if (v.synth.triggerRelease) v.synth.triggerRelease();
+      }
+      if (v.synth2) {
+        if (v.synth2.triggerRelease) v.synth2.triggerRelease();
+      }
+      setTimeout(() => {
+        try { v.synth?.dispose(); } catch(e){}
+        try { v.synth2?.dispose(); } catch(e){}
+        try { v.dly?.dispose(); } catch(e){}
+        try { v.pitchShift?.dispose(); } catch(e){}
+        try { v.tremolo?.dispose(); } catch(e){}
+      }, 6000);
+    }
+  } catch(e) {}
+  voices.delete(id);
+}
+
+function syncVoicesWithPoints() {
+  points.forEach(p => { if (!voices.has(p.id)) createVoice(p); });
+  const ids = new Set(points.map(p => p.id));
+  Array.from(voices.keys()).forEach(id => {
+    if (!ids.has(id)) destroyVoice(id);
+  });
+}
+
+function rebuildAllVoices() {
+  // when mode changes, kill all and rebuild with new profiles
+  Array.from(voices.keys()).forEach(destroyVoice);
+  setTimeout(() => {
+    if (soundEnabled) {
+      points.forEach(p => createVoice(p));
+    }
+  }, 100);
+}
+
+// ============ INTERACTION ============
+
+canvas.addEventListener('mousedown', e => {
+  isDragging = true; dragDist = 0;
+  lastMX = e.offsetX; lastMY = e.offsetY;
+  // right-click or space+drag → pan mode
+  if (e.button === 2 || spaceDown) {
+    isPanning = true;
+    return;
+  }
+  // if no shift and hovering a point, grab the point
+  if (!e.shiftKey) {
+    const hit = findPointAtScreen(e.offsetX, e.offsetY);
+    if (hit) {
+      draggingPoint = hit;
+    }
+  }
+});
+
+// disable right-click context menu
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+canvas.addEventListener('mousemove', e => {
+  if (isDragging) {
+    dragDist += Math.abs(e.movementX) + Math.abs(e.movementY);
+    if (isPanning) {
+      panX += e.movementX;
+      panY += e.movementY;
+      targetPanX = panX;
+      targetPanY = panY;
+    } else if (draggingPoint) {
+      const wp = unproject(e.offsetX, e.offsetY);
+      draggingPoint.x = wp.x;
+      draggingPoint.y = wp.y;
+      draggingPoint.z = wp.z;
+    } else {
+      rotY += e.movementX * 0.007;
+      rotX += e.movementY * 0.007;
+      rotX = Math.max(-Math.PI/2, Math.min(Math.PI/2, rotX));
+    }
+  }
+  lastMX = e.offsetX; lastMY = e.offsetY;
+  if (isPanning || spaceDown) {
+    canvas.style.cursor = isPanning ? 'grabbing' : 'grab';
+  } else if (e.shiftKey) {
+    const hit = findPointAtScreen(e.offsetX, e.offsetY);
+    canvas.style.cursor = hit ? 'not-allowed' : (selectedEmo ? 'crosshair' : 'grab');
+  } else if (draggingPoint) {
+    canvas.style.cursor = 'grabbing';
+  } else {
+    const hit = !isDragging ? findPointAtScreen(e.offsetX, e.offsetY) : null;
+    if (hit) {
+      canvas.style.cursor = 'move';
+    } else {
+      canvas.style.cursor = selectedEmo ? 'crosshair' : (isDragging ? 'grabbing' : 'grab');
+    }
+  }
+  draw();
+});
+
+canvas.addEventListener('mouseup', e => {
+  // reset pan flag
+  if (isPanning) {
+    isPanning = false;
+    isDragging = false; dragDist = 0;
+    return;
+  }
+  // if we were dragging an existing point, save and exit
+  if (draggingPoint) {
+    if (dragDist > 6) {
+      savePoints();
+    }
+    draggingPoint = null;
+    isDragging = false; dragDist = 0;
+    return;
+  }
+  if (dragDist < 6) {
+    if (e.shiftKey) {
+      const hit = findPointAtScreen(e.offsetX, e.offsetY);
+      if (hit) {
+        const idx = points.findIndex(p => p.id === hit.id);
+        if (idx >= 0) {
+          if (soundEnabled) destroyVoice(hit.id);
+          points.splice(idx, 1);
+          savePoints(); draw();
+        }
+      }
+    } else if (selectedEmo) {
+      // don't add point if click landed on existing point
+      const hit = findPointAtScreen(e.offsetX, e.offsetY);
+      if (!hit) {
+        const wp = unproject(e.offsetX, e.offsetY);
+        const newPt = { x: wp.x, y: wp.y, z: wp.z, emo: selectedEmo.emo, radius, id: Date.now() };
+        points.push(newPt);
+        savePoints(); draw();
+        if (soundEnabled) createVoice(newPt);
+      }
+    }
+  }
+  isDragging = false; dragDist = 0;
+});
+
+canvas.addEventListener('mouseleave', () => { isDragging = false; draw(); });
+
+// wheel zoom — zoom toward mouse cursor (smooth)
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const factor = e.deltaY > 0 ? 0.88 : 1.13;
+  const newZoom = Math.max(0.15, Math.min(4, targetZoom * factor));
+  if (newZoom === targetZoom) return;
+
+  const mx = e.offsetX, my = e.offsetY;
+  // world coords at mouse based on CURRENT (not target) state
+  const worldX = (mx - (W/2 + targetPanX)) / (BOX * targetZoom);
+  const worldY = -(my - (H/2 + targetPanY)) / (BOX * targetZoom);
+
+  targetZoom = newZoom;
+  // adjust target pan so the same world point stays under cursor
+  targetPanX = mx - W/2 - worldX * BOX * targetZoom;
+  targetPanY = my - H/2 + worldY * BOX * targetZoom;
+}, { passive: false });
+
+// pinch zoom for touch
+let pinchStart = null;
+canvas.addEventListener('touchstart', e => {
+  if (e.touches.length === 2) {
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    pinchStart = { dist: Math.sqrt(dx*dx + dy*dy), zoom };
+    isDragging = false;
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+  if (e.touches.length === 2 && pinchStart) {
+    e.preventDefault();
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    zoom = Math.max(0.15, Math.min(4, pinchStart.zoom * (dist / pinchStart.dist)));
+    draw();
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchend', e => {
+  if (e.touches.length < 2) pinchStart = null;
+});
+
+let touchDist2 = 0;
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0], rect = canvas.getBoundingClientRect();
+  lastMX = t.clientX - rect.left; lastMY = t.clientY - rect.top;
+  touchDist2 = 0; isDragging = true;
+}, {passive:false});
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0], rect = canvas.getBoundingClientRect();
+  const mx = t.clientX - rect.left, my = t.clientY - rect.top;
+  const dx = mx - lastMX, dy = my - lastMY;
+  touchDist2 += Math.abs(dx) + Math.abs(dy);
+  rotY += dx * 0.007; rotX += dy * 0.007;
+  rotX = Math.max(-Math.PI/2, Math.min(Math.PI/2, rotX));
+  lastMX = mx; lastMY = my; draw();
+}, {passive:false});
+
+canvas.addEventListener('touchend', e => {
+  e.preventDefault();
+  if (touchDist2 < 10 && selectedEmo) {
+    const t = e.changedTouches[0], rect = canvas.getBoundingClientRect();
+    const wp = unproject(t.clientX - rect.left, t.clientY - rect.top);
+    const newPt = { x: wp.x, y: wp.y, z: wp.z, emo: selectedEmo.emo, radius, id: Date.now() };
+    points.push(newPt);
+    savePoints(); draw();
+    if (soundEnabled) createVoice(newPt);
+  }
+  isDragging = false;
+}, {passive:false});
+
+// ============ CONTROLS ============
+
+document.getElementById('radius').addEventListener('input', e => {
+  radius = parseInt(e.target.value);
+  document.getElementById('rVal').textContent = radius;
+  draw();
+});
+
+document.getElementById('resetBtn').addEventListener('click', () => { rotX=-0.35; rotY=0.55; zoom=1; panX=0; panY=0; targetZoom=1; targetPanX=0; targetPanY=0; draw(); });
+
+// ============ VIDEO RECORDING ============
+let mediaRecorder = null;
+let recordedChunks = [];
+let isRecording = false;
+let audioStreamDest = null;
+
+// ============ SAVE / LOAD DATA ============
+document.getElementById('saveDataBtn').addEventListener('click', () => {
+  const data = {
+    version: 1,
+    timestamp: new Date().toISOString(),
+    mode: currentMode,
+    points: points
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `affect_data_${Date.now()}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+
+document.getElementById('loadDataBtn').addEventListener('click', () => {
+  document.getElementById('loadDataInput').click();
+});
+
+document.getElementById('loadDataInput').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const data = JSON.parse(ev.target.result);
+      if (!data.points || !Array.isArray(data.points)) throw new Error('Invalid data format');
+      // clear current sound voices
+      if (soundEnabled) Array.from(voices.keys()).forEach(destroyVoice);
+      points = data.points;
+      savePoints();
+      // restore mode if present
+      if (data.mode && COLORS[data.mode]) {
+        currentMode = data.mode;
+        document.body.dataset.mode = currentMode;
+        document.querySelectorAll('.mode-btn').forEach(b => {
+          b.classList.toggle('active', b.dataset.mode === currentMode);
+        });
+      }
+      // rebuild voices if sound is on
+      if (soundEnabled) points.forEach(p => createVoice(p));
+      draw();
+      alert(`Loaded ${points.length} points`);
+    } catch (err) {
+      alert('Load failed: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+  // reset so same file can be loaded again
+  e.target.value = '';
+});
+
+document.getElementById('recordBtn').addEventListener('click', async () => {
+  if (!isRecording) {
+    try {
+      // capture canvas at 60fps for smooth motion
+      const videoStream = canvas.captureStream(60);
+      const tracks = [...videoStream.getVideoTracks()];
+
+      // try to add audio if sound is on
+      if (soundEnabled && Tone.context && Tone.context.rawContext) {
+        try {
+          if (!audioStreamDest) {
+            audioStreamDest = Tone.context.rawContext.createMediaStreamDestination();
+            Tone.Destination.connect(audioStreamDest);
+          }
+          audioStreamDest.stream.getAudioTracks().forEach(t => tracks.push(t));
+        } catch (audioErr) {
+          console.warn('Audio capture skipped:', audioErr);
+        }
+      }
+
+      const stream = new MediaStream(tracks);
+
+      // prefer VP9 for higher quality, fall back to VP8
+      let mimeType = 'video/webm';
+      if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
+        mimeType = 'video/webm;codecs=vp9';
+      } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8')) {
+        mimeType = 'video/webm;codecs=vp8';
+      }
+
+      mediaRecorder = new MediaRecorder(stream, {
+        mimeType,
+        videoBitsPerSecond: 20000000 // 20 Mbps — high quality
+      });
+
+      recordedChunks = [];
+      mediaRecorder.ondataavailable = e => {
+        if (e.data && e.data.size > 0) recordedChunks.push(e.data);
+      };
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(recordedChunks, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `affect_${currentMode}_${Date.now()}.webm`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+        recordedChunks = [];
+      };
+      mediaRecorder.onerror = err => {
+        console.error('Recorder error:', err);
+        alert('Recording error: ' + (err.error?.message || 'unknown'));
+        isRecording = false;
+        document.getElementById('recordBtn').textContent = 'Record';
+        document.getElementById('recordBtn').style.color = '';
+      };
+
+      mediaRecorder.start(1000); // collect data every 1s to avoid memory bloat
+      isRecording = true;
+      document.getElementById('recordBtn').textContent = '● Stop';
+      document.getElementById('recordBtn').style.color = '#ff3030';
+    } catch (err) {
+      console.error(err);
+      alert('Recording failed to start: ' + err.message);
+    }
+  } else {
+    try {
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+      }
+    } catch(e) { console.error(e); }
+    isRecording = false;
+    document.getElementById('recordBtn').textContent = 'Record';
+    document.getElementById('recordBtn').style.color = '';
+  }
+});
+
+document.getElementById('clearBtn').addEventListener('click', () => {
+  if (confirm('Clear all points?')) {
+    if (soundEnabled) Array.from(voices.keys()).forEach(destroyVoice);
+    points = []; savePoints(); draw();
+  }
+});
+
+document.getElementById('exportBtn').addEventListener('click', () => {
+  try {
+    const scale = 3;
+    const offCanvas = document.createElement('canvas');
+    offCanvas.width = W * scale;
+    offCanvas.height = H * scale;
+    const offCtx = offCanvas.getContext('2d');
+    offCtx.scale(scale, scale);
+
+    renderToContext(offCtx, W, H);
+
+    const dataUrl = offCanvas.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = `affect_${currentMode}_${Date.now()}.png`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  } catch (err) {
+    console.error('Export error:', err);
+    alert('Export failed: ' + err.message);
+  }
+});
+
+// Self-contained renderer that draws to any context at given logical size
+function renderToContext(c, w, h) {
+  c.clearRect(0, 0, w, h);
+  c.fillStyle = bgColor();
+  c.fillRect(0, 0, w, h);
+
+  const cx = w / 2 + panX, cy = h / 2 + panY;
+  const projAt = (x, y, z) => {
+    const fov = 700, depth = fov + z * BOX * zoom;
+    const s = fov / depth;
+    return { sx: cx + x * BOX * zoom * s, sy: cy - y * BOX * zoom * s, s: s * zoom, z };
+  };
+
+  const projected = points.map(p => {
+    const r = rot(p.x, p.y, p.z);
+    const pr = projAt(r.x, r.y, r.z);
+    const seed = (p.id || 0) % 1000;
+    const phase = seed * 0.013;
+    const speed = 0.01 + (seed % 7) * 0.0016;
+    const breath = 1 + Math.sin(animT * speed + phase) * 0.055;
+    return { ...p, sx: pr.sx, sy: pr.sy, rad: p.radius * pr.s * breath, _z: r.z };
+  }).sort((a, b) => a._z - b._z);
+
+  // axis indicator
+  drawAxisAt(c, 60, h - 60, 40);
+
+  if (projected.length === 0) return;
+
+  const groups = {};
+  projected.forEach(p => {
+    const col = colorFor(p.emo);
+    if (!groups[p.emo]) groups[p.emo] = { color: col, blobs: [] };
+    groups[p.emo].blobs.push(p);
+  });
+
+  // off-screen for blob multiply
+  const tmp = document.createElement('canvas');
+  tmp.width = w; tmp.height = h;
+  const tc = tmp.getContext('2d');
+  Object.entries(groups).forEach(([emo, g]) => {
+    g.blobs.forEach(b => paintBlob(tc, b.sx, b.sy, g.color, b.rad));
+  });
+
+  c.save();
+  c.globalCompositeOperation = currentMode === 'uncanny' ? 'screen' : 'multiply';
+  c.globalAlpha = currentMode === 'uncanny' ? 1.0 : 0.75;
+  c.drawImage(tmp, 0, 0);
+  c.restore();
+
+  c.save();
+  c.globalCompositeOperation = 'screen';
+  projected.forEach(p => paintCore(c, p.sx, p.sy, colorFor(p.emo), p.rad));
+  c.restore();
+
+  Object.entries(groups).forEach(([emo, g]) => {
+    const [r,gr,b] = hexToRgb(g.color);
+    const segs = getContourSegs(g.blobs, 0.15, w, h);
+    const loops = chainToLoops(segs);
+    loops.forEach(loop => {
+      drawSmoothLoopOn(c, loop);
+      if (currentMode === 'uncanny') {
+        c.strokeStyle = `rgba(${r},${gr},${b},0.35)`;
+      } else {
+        c.strokeStyle = `rgba(${Math.round(r*0.5)},${Math.round(gr*0.5)},${Math.round(b*0.5)},0.35)`;
+      }
+      c.lineWidth = 0.3;
+      c.stroke();
+    });
+  });
+
+  Object.entries(groups).forEach(([emo, g]) => {
+    const cxc = g.blobs.reduce((s,b)=>s+b.sx,0) / g.blobs.length;
+    const cyc = g.blobs.reduce((s,b)=>s+b.sy,0) / g.blobs.length;
+    c.font = '8px sans-serif';
+    c.fillStyle = currentMode === 'uncanny' ? 'rgba(220,220,220,0.5)' : 'rgba(20,20,20,0.4)';
+    c.textAlign = 'center';
+    c.fillText(emo.toUpperCase(), cxc, cyc + 3);
+  });
+  c.textAlign = 'left';
+}
+
+function drawAxisAt(c, ox, oy, len) {
+  const axisColor = currentMode === 'uncanny' ? 'rgba(200,200,200,0.7)' : 'rgba(60,60,60,0.7)';
+  const labelColor = currentMode === 'uncanny' ? 'rgba(220,220,220,0.85)' : 'rgba(40,40,40,0.85)';
+  const axes = [
+    { v: [1,0,0], label: 'X' },
+    { v: [0,1,0], label: 'Y' },
+    { v: [0,0,1], label: 'Z' },
+  ];
+  c.beginPath();
+  c.arc(ox, oy, 2.5, 0, Math.PI*2);
+  c.fillStyle = axisColor;
+  c.fill();
+  axes.forEach(ax => {
+    const r = rot(...ax.v);
+    const ex = ox + r.x * len;
+    const ey = oy - r.y * len;
+    c.beginPath();
+    c.moveTo(ox, oy);
+    c.lineTo(ex, ey);
+    c.strokeStyle = axisColor;
+    c.lineWidth = 1.2;
+    c.stroke();
+    const ang = Math.atan2(ey - oy, ex - ox);
+    const ahl = 5;
+    c.beginPath();
+    c.moveTo(ex, ey);
+    c.lineTo(ex - ahl*Math.cos(ang - 0.4), ey - ahl*Math.sin(ang - 0.4));
+    c.moveTo(ex, ey);
+    c.lineTo(ex - ahl*Math.cos(ang + 0.4), ey - ahl*Math.sin(ang + 0.4));
+    c.stroke();
+    c.font = '500 10px sans-serif';
+    c.fillStyle = labelColor;
+    c.textAlign = 'center';
+    c.fillText(ax.label, ex + (ex - ox) * 0.22, ey + (ey - oy) * 0.22 + 4);
+  });
+  c.textAlign = 'left';
+}
+
+function drawSmoothLoopOn(c, pts) {
+  if (pts.length < 3) return;
+  const n = pts.length;
+  c.beginPath();
+  const mid = (a,b) => [(a[0]+b[0])/2,(a[1]+b[1])/2];
+  const start = mid(pts[n-1], pts[0]);
+  c.moveTo(start[0], start[1]);
+  for (let i=0;i<n;i++) {
+    const cur=pts[i], next=pts[(i+1)%n];
+    const m=mid(cur,next);
+    c.quadraticCurveTo(cur[0],cur[1],m[0],m[1]);
+  }
+  c.closePath();
+}
+
+document.getElementById('soundBtn').addEventListener('click', async () => {
+  if (!soundEnabled) {
+    await initSound();
+    applyModeAudioSettings();
+    soundEnabled = true;
+    document.getElementById('soundBtn').textContent = 'Sound: on';
+    syncVoicesWithPoints();
+  } else {
+    soundEnabled = false;
+    document.getElementById('soundBtn').textContent = 'Sound: off';
+    Array.from(voices.keys()).forEach(destroyVoice);
+  }
+});
+
+document.querySelectorAll('.mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentMode = btn.dataset.mode;
+    document.body.dataset.mode = currentMode;
+    // Update selected emotion button color
+    if (selectedEmo) {
+      const activeBtn = document.querySelector(`.emo-btn[data-emo="${selectedEmo.emo}"]`);
+      if (activeBtn) {
+        const c = colorFor(selectedEmo.emo);
+        selectedEmo.color = c;
+        activeBtn.style.background = c;
+        activeBtn.style.color = isLightColor(c) ? '#111' : '#fff';
+      }
+    }
+    if (soundEnabled) {
+      applyModeAudioSettings();
+      rebuildAllVoices();
+    }
+    draw();
+  });
+});
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') {
+    if (!spaceDown && document.activeElement === document.body) {
+      spaceDown = true;
+      canvas.style.cursor = 'grab';
+      e.preventDefault();
+    }
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+    e.preventDefault();
+    if (points.length > 0) {
+      const removed = points.pop();
+      if (removed && soundEnabled) destroyVoice(removed.id);
+      savePoints(); draw();
+    }
+  }
+});
+
+document.addEventListener('keyup', e => {
+  if (e.code === 'Space') {
+    spaceDown = false;
+  }
+});
+
+// ============ INIT ============
+
+buildToolbar();
+loadPoints();
+resize();
+
+function animate() {
+  animT++;
+  // smoothly interpolate zoom and pan toward target
+  const ease = 0.18;
+  if (Math.abs(targetZoom - zoom) > 0.001) {
+    zoom += (targetZoom - zoom) * ease;
+  } else {
+    zoom = targetZoom;
+  }
+  if (Math.abs(targetPanX - panX) > 0.1) {
+    panX += (targetPanX - panX) * ease;
+  } else {
+    panX = targetPanX;
+  }
+  if (Math.abs(targetPanY - panY) > 0.1) {
+    panY += (targetPanY - panY) * ease;
+  } else {
+    panY = targetPanY;
+  }
+  draw();
+  requestAnimationFrame(animate);
+}
+animate();
+</script>
+</body>
+</html>
